@@ -28,11 +28,11 @@ The code in this repo has been tested with the following software versions:
 #### Methods
 
 - `cluter_topo.py`:  Searching for surface and embedding sites for aperiodicity structure.
-- `inside_topo.py`: Searching for surface and embedding sites for periodicity structure.
+- `slab_topo.py`: Searching for surface and embedding sites for periodicity structure.
 
 #### Workflow
 
-Demonstrates brief examples and workflow
+Two jupyter notebooks for quick start, showing the workflow for finding unique configurations for both clusters and slabs.
 
 #### Example
 
