@@ -9,8 +9,9 @@ from ase.neighborlist import natural_cutoffs, NeighborList
 from ase import Atoms 
 
 def expand_cell(atoms, cutoff=None, padding=None , pbc =[1,1,0]):
-    #Return Cartesian coordinates atoms within a supercell
-    #at least one neighboring atom. Borrowed from Catkit.
+    """Return Cartesian coordinates atoms within a supercell
+    at least one neighboring atom. Modify from Catkit.
+    """
     cell = atoms.cell
     cell_copy =  cell.copy()
     pos = atoms.positions
@@ -48,7 +49,7 @@ def expand_cell(atoms, cutoff=None, padding=None , pbc =[1,1,0]):
     return index, coords, offsets
 
 def expand_surface_cells(original_atoms,cell):
-    #Return Cartesian coordinates surface_atoms within a supercell
+    """Return Cartesian coordinates surface_atoms within a supercell"""
     la_x = cell[0]
     la_y = cell[1]
     new_atoms = []
@@ -64,7 +65,7 @@ def expand_surface_cells(original_atoms,cell):
     return np.array(new_atoms)
 
 def point_in_range(pos,atoms):
-    #Determine if the site is in the current lattice
+    """Determine if the site is in the current lattice"""
     cell = atoms.cell
     z_min = min(atoms.positions[:,2])
     z_max = max(atoms.positions[:,2])
@@ -76,19 +77,61 @@ def point_in_range(pos,atoms):
     return True
 
 def objective(x, points, radius):
+    """This function is to calculate the difference between the distance between two points and the target radius for least squares optimization"""
     return np.linalg.norm(points - x, axis=1) - radius
 
 def calculate_centroid(coordinates,radius):
-        #Finding the outer centers of atomic combinations
+        """Finding the outer centers of atomic combinations.
+
+        Parameters
+        ----------
+        points : ndarray
+            The Cartesian Cartesian coordinates of atomic combinations.
+        
+        radius: float
+            The distance from outer center to point.
+        """
+         
         initial_guess = np.mean(coordinates, axis=0)
         result = least_squares(objective, initial_guess, args=(coordinates, radius))
         return result.x
 
-def find_sites(coords=None,radii=5.):
-        #Site finding based on topological information
+def inside_topo(atoms,bond_len,pbc=True,mul=0.8,tol=0.6,radius=5.):
+        """This is a function finding periodic structural 
+           embedding sites such as slab
+        
+        Parameters:
+        -----------
+        atoms : ase.Atoms object
+                The nanoparticle to use as a template to generate embedding sites. 
+                Accept any ase.Atoms object. 
+
+        bond_len: float
+                The sum of the atomic radii between a reasonable adsorption 
+                substrate and the adsorbate.
+        pbc : boolen , default True
+                Whether or not to expand cells on input atoms to find sites at structural boundaries
+
+        mul : float , default 0.8
+                A scaling factor for the atomic bond lengths used to modulate
+                the number of sites generated, resulting in a larger number of potential sites 
+
+        tol : float , default 0.6
+                The minimum distance in Angstrom between two site for removal
+                of partially overlapping site
+                
+        radius : float , default 5.0
+                The maximum distance between two points 
+                when performing persistent homology calculations   
+                       
+        """
+        if pbc == False:
+              coords = atoms.get_positions()
+        else:
+              index, coords, offsets = expand_cell(atoms=atoms)
         sites = []
         ac = gudhi.AlphaComplex(points=coords)
-        st = ac.create_simplex_tree((radii/2)**2)    
+        st = ac.create_simplex_tree((radius/2)**2)    
         combinations = st.get_skeleton(9)
         for com in combinations:
                 if len(com[0]) >= 2 :
@@ -96,7 +139,7 @@ def find_sites(coords=None,radii=5.):
                         site = calculate_centroid(temp,math.sqrt(com[1]))
                         sites.append(site)
 
-        rc = gudhi.RipsComplex(points=coords,max_edge_length=radii)
+        rc = gudhi.RipsComplex(points=coords,max_edge_length=radius)
         st = rc.create_simplex_tree(9)   
         combinations = st.get_skeleton(9)
         for com in combinations:
@@ -104,15 +147,6 @@ def find_sites(coords=None,radii=5.):
                         temp = coords[com[0]]
                         site = calculate_centroid(temp,com[1]/2.0)
                         sites.append(site)
-        return sites
-
-def inside_topo(atoms,bond_len,pbc=True,tol=0.6,mul=0.8):
-       #Input atoms and bond length for embedding site finding
-        if pbc == False:
-              coords = atoms.get_positions()
-        else:
-              index, coords, offsets = expand_cell(atoms=atoms)
-        sites = find_sites(coords=coords)
 
         sites_in_cell = []
         for site in sites:
@@ -156,6 +190,7 @@ def calculate_coordination_numbers(atoms):
     return coordination_numbers, nl
 
 def calculate_surface_normals(atoms, nl):
+    #The function for calculating surface normal vectors to find surface atoms.
     normals = []
     for i in range(len(atoms)):
         indices, offsets = nl.get_neighbors(i)
@@ -168,7 +203,21 @@ def calculate_surface_normals(atoms, nl):
     return normals
 
 def get_surface_atoms_by_coordination(atoms, threshold=12,both_surface=False):
-    #Access to surface atoms by coordination number
+    """The function to access to surface atoms by coordination number
+
+        Parameters:
+        -----------
+        atoms : ase.Atoms object
+                The nanoparticle to use as a template to find surface atoms. 
+                Accept any ase.Atoms object.    
+
+        theshold : int , default 10
+                The maximum coordination number of surface atoms
+
+        both_surface , boolen ,default False
+                Whether to return the atoms of the lower surface, 
+                if True, the atoms of the upper and lower surfaces will be returned
+    """
     pos = atoms.get_positions()
     z_coords = pos[:, 2]
     if np.all(z_coords == z_coords[0]) :
@@ -205,7 +254,7 @@ def get_surface_atoms_by_coordination(atoms, threshold=12,both_surface=False):
     return upper_surface_atoms
 
 def calculate_normal_vector(positions):
-        # Calculate the surface normal vector
+        # Calculation of surface normal vectors for outward expansion of site
         vec1 = positions[1] - positions[0]
         vec2 = positions[2] - positions[0]
         normal = np.cross(vec1, vec2)
@@ -217,6 +266,26 @@ def calculate_normal_vector(positions):
         return normal
 
 def extend_point_away(site,pos,surface_atoms,center,height):
+       """The function is to offset surface sites along the normal vector
+    
+        Parameters:
+        -----------
+        pos : list of ndarray
+                The position of the initial atom used to generate the site
+
+        center : ndarray 
+                The center point of the slab
+        
+        site : ndarray
+                The site to used for outward offset
+
+        height : float
+                The distance offset in the direction of the normal vector
+        
+        surface_atoms : ase.Atoms object
+                The surface_atoms used to generate surface sites. 
+                Accept any ase.Atoms object. 
+        """
        surface_points = surface_atoms.get_positions()
        if site[2] >= center[2]:
               sign = 1
@@ -236,8 +305,40 @@ def extend_point_away(site,pos,surface_atoms,center,height):
        normal_vector = calculate_normal_vector(pos)
        return  site + normal_vector*height*sign
 
-def surface_topo(atoms,bond_len = 1.5,pbc=True,tol=0.6,mul=0.8,both_surface=False,radii=5.):
-       #Topologizing surface atoms to obtain sites
+def surface_topo(atoms,bond_len,pbc=True,tol=0.6,mul=0.8,both_surface=False,radius=5.):
+        """The function to Topologize surface atoms to obtain sites
+        
+        Parameters:
+        -----------
+        atoms : ase.Atoms object
+                The slab to use as a template to generate surface sites. 
+                Accept any ase.Atoms object. 
+
+        bond_len: float
+                The sum of the atomic radii between a reasonable adsorption 
+                substrate and the adsorbate.
+                
+        pbc : boolen , default True
+                Whether or not to expand cells on input atoms to find sites at structural boundaries
+
+        mul : float , default 0.8
+                A scaling factor for the atomic bond lengths used to modulate
+                the number of sites generated, resulting in a larger number of potential sites 
+
+        tol : float , default 0.6
+                The minimum distance in Angstrom between two site for removal
+                of partially overlapping site
+
+        radius : float , default 5.0
+                The maximum distance between two points 
+                when performing persistent homology calculations  
+        
+        both_surface , boolen ,default False
+                Whether to return the sites of the lower surface, 
+                if True, the sites of the upper and lower surfaces will be returned
+
+        """
+       
         surface_atoms = get_surface_atoms_by_coordination(atoms,both_surface=both_surface)
         if pbc == False:
               coords = surface_atoms.get_positions()
@@ -245,7 +346,7 @@ def surface_topo(atoms,bond_len = 1.5,pbc=True,tol=0.6,mul=0.8,both_surface=Fals
               coords = expand_surface_cells(surface_atoms.get_positions(),atoms.cell)
         center = atoms.get_center_of_mass()
         rc = gudhi.AlphaComplex(points=coords)
-        st = rc.create_simplex_tree((radii/2)**2)     
+        st = rc.create_simplex_tree((radius/2)**2)     
         combinations = st.get_skeleton(9)
         sites= []
         for com in combinations:
