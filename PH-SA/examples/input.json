@@ -1,0 +1,52 @@
+{
+    "model": {
+        "type_embedding":{"trainable": true},
+        "descriptor": {"trainable": true},
+        "fitting_net": {"trainable": true},
+        "type_map": [
+            "Pd",
+            "H"
+        ]
+    },
+    "learning_rate": {
+        "type": "exp",
+        "start_lr": 0.001,
+        "decay_steps": 50,
+        "stop_lr": 3.51e-08
+    },
+    "loss": {
+        "type": "ener",
+        "start_pref_e": 0.02,
+        "limit_pref_e": 1,
+        "start_pref_f": 1000,
+        "limit_pref_f": 1,
+        "start_pref_v": 0,
+        "limit_pref_v": 0
+    },
+    "training": {
+        "training_data": {
+            "systems": [
+				    
+            ],
+            "batch_size": "auto"
+        },
+        "validation_data": {
+            "systems": [
+				
+                ],
+            "batch_size": "auto",
+			"numb_btch":	1
+        },
+        "numb_steps": 10000,
+        "seed": 3982377700,
+        "_comment": "that's all",
+        "disp_file": "lcurve.out",
+        "disp_freq": 100,
+        "save_freq": 10000,
+        "save_ckpt": "model.ckpt",
+        "disp_training": true,
+        "time_training": true,
+        "profiling": false,
+        "profiling_file": "timeline.json"
+    }
+}
