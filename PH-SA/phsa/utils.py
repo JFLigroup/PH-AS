@@ -33,17 +33,17 @@ def get_cutoffs(atoms,metal_elements,mult=1.1):
 
         cutoffs = []
         for atom in atoms:
-                symbol = atom.symbol  # 获取原子符号
+                symbol = atom.symbol  
                 if symbol in metal_elements:
-                # 金属使用共价半径
+                
                         cutoff = covalent_radii[atomic_numbers[symbol]]
                 else:
-                # 非金属使用范德华半径
+               
                         cutoff = vdw_radii[atomic_numbers[symbol]]
                 
-                # 如果某些数据缺失，可以设置默认值（例如：冗余的冗余检查）
+               
                 if cutoff is None or cutoff <= 0:
-                        cutoff = 1.5  # 默认值，可调整
+                        cutoff = 1.5 
                 cutoff *= mult
                 cutoffs.append(cutoff)
         return cutoffs
