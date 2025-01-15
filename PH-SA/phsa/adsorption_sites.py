@@ -7,7 +7,7 @@ from scipy.spatial import KDTree
 from collections import defaultdict
 from ase.data import atomic_numbers, covalent_radii,vdw_radii
 import time
-from .utils import calculate_centroid , get_cutoffs ,metal_elements
+from .utils import calculate_centroid , get_cutoffs ,metal_elements,plane_normal
 class ClusterAdsorptionSitesFinder():
         """
         Parameters:
@@ -140,24 +140,64 @@ class ClusterAdsorptionSitesFinder():
                 """
                 center = self.atoms.get_center_of_mass()
                 surf_pos = self.surf_atoms.get_positions()
+                surface_atoms = self.surf_atoms
                 rc = gudhi.AlphaComplex(points=surf_pos)
                 st = rc.create_simplex_tree((self.radii/2)**2)   
                 combinations = st.get_skeleton(4)
                 sites= []
-                site_type = ['top','bridge','hollow',"hollow"]
+                site_type = ['top','bridge','hollow',"4fold"]
+                fold4_group = []
+                del_bri_couple =[]
                 # find sites 
+                combinations = sorted(list(combinations), key=lambda x: len(x[0]), reverse=True)
                 for com in combinations:
                         # Acquisition of surface initial sites
                         temp = surf_pos[com[0]]
                         cov_radii = [covalent_radii[self.surf_atoms[c].number] for c in com[0]]
-                        #Obtaining the initial site
                         if len(com[0])==1:
+                                temp_com = com[0]
                                 site = temp[0]
                         elif len(com[0])==2:
+                                temp_com = com[0]
+                                if tuple(sorted(com[0])) in del_bri_couple:
+                                        continue
                                 t = cov_radii[1]/sum(cov_radii)
                                 site = t * temp[0] + (1 - t) * temp[1]
                         else:
+                                if self.bond_len is None:
+                                        bond_len = max(cov_radii)+self.surface_add_radii
+                                else:
+                                        bond_len = self.bond_len
                                 site = calculate_centroid(temp,cov_radii,math.sqrt(com[1]))
+                                temp_com = []
+                                cov_radii = []
+                                
+                                for i,coord in enumerate(surf_pos):
+                                        if np.linalg.norm(site - coord) <= bond_len:
+                                                temp_com.append(i) 
+                                                cov_radii.append(covalent_radii[surface_atoms[i].number])
+                                if len(temp_com) == 4:
+                                        index_tuple = tuple(temp_com)
+                                        if index_tuple in fold4_group:
+                                                continue
+                                        else:
+                                                site = calculate_centroid(surf_pos[temp_com],cov_radii,math.sqrt(com[1]))
+                                                fold4_group.append(index_tuple)
+                                                max_d = -1
+                                                for ind in temp_com[1:]:
+                                                        if np.linalg.norm(surf_pos[temp_com[0]]-surf_pos[ind]) > max_d:
+                                                                max_d = np.linalg.norm(surf_pos[temp_com[0]]-surf_pos[ind])
+                                                                temp_i = ind
+                                                del_bri_couple.append((temp_com[0],temp_i))
+                                                remain = []
+                                                for i in temp_com:
+                                                        if i != temp_com[0] and i != temp_i:
+                                                                remain.append(i)
+                                                del_bri_couple.append(tuple(remain))
+                                elif len(temp_com)==3:
+                                        temp_com = com[0]
+                        #Obtaining the initial site
+                        
                         
                         # Determine the metals that make up the site
                         if self.bond_len is None:
@@ -180,10 +220,11 @@ class ClusterAdsorptionSitesFinder():
                                         break 
                         if flag:
                                 sites.append({
-                                        'site':site_type[len(com[0])-1],
+                                        'site':site_type[len(temp_com)-1],
                                         'type':'surface',
                                         'normal':normal,
-                                        'position':site,                                       
+                                        'position':site,   
+                                        'indices':[c for c in temp_com]                                    
                                 })
                                 
                 if self.tol == False:
@@ -240,6 +281,7 @@ class ClusterAdsorptionSitesFinder():
                                                 'type':'inside',
                                                 'normal':None,
                                                 'position':site,
+                                                'indices':[c for c in com[0]]
                                         })                
                 # Computing sites larger than 4 dimensions using VR complex shapes
                 rc = gudhi.RipsComplex(points=pos,max_edge_length=self.radii)
@@ -266,6 +308,7 @@ class ClusterAdsorptionSitesFinder():
                                                 'type':'inside',
                                                 'normal':None,
                                                 'position':site,
+                                                'indices':[c for c in com[0]]
                                         })
                                 
                 if self.tol == False:
@@ -463,7 +506,7 @@ class SlabAdsorptionsSitesFinder():
                         
         def inside_topo(self):
                 """ This is a function used to find embedding sites for various
-                non-periodic structures such as nanoclusters.
+                periodic structures.
                 """
                 if not self.pbc.all():
                         pos = self.positions
@@ -506,6 +549,7 @@ class SlabAdsorptionsSitesFinder():
                                         'type': 'inside',
                                         'normal': None,
                                         'position': site,
+                                        'indices':[c%n for c in com[0]]
                                         })                       
                 # Compute loci larger than 4 dimensions using VR complex shapes
                 rc = gudhi.RipsComplex(points=pos, max_edge_length=self.radii)
@@ -533,6 +577,7 @@ class SlabAdsorptionsSitesFinder():
                                         'type': 'inside',
                                         'normal': None,
                                         'position': site,
+                                        'indices':[c%n for c in com[0]]
                                         })
                 if self.tol is False:
                         for site in sites:
@@ -635,25 +680,64 @@ class SlabAdsorptionsSitesFinder():
                         coords = surface_atoms.get_positions()
                 else:
                         coords = self.expand_surface_cells(surface_atoms.get_positions(),self.cell)
-
+                surface_atoms.cell = self.cell 
+                surface_atoms.write('../surface_atoms.vasp')
                 rc = gudhi.AlphaComplex(points=coords)
                 st = rc.create_simplex_tree((self.radii/2)**2)     
-                combinations = st.get_skeleton(9)
+                combinations = st.get_skeleton(4)
                 center = self.atoms.get_center_of_mass()
                 sites= []
-                atom_index = defaultdict(list)
                 combinations = sorted(list(combinations), key=lambda x: len(x[0]), reverse=True)
                 del_bri_couple = []
                 n = len(surface_atoms)
-                fold4_couple = []
+                fold4_group = []
+                tri_groups = []
                 for com in combinations :
                         if len(com[0])>2:
+                                
                                 temp = coords[com[0]]
                                 cov_radii = [covalent_radii[surface_atoms[c%n].number] for c in com[0]]
                                 site = calculate_centroid(temp,cov_radii,math.sqrt(com[1]))
+                                if site[2] > max(temp[:,2]) + 0.1:
+                                        continue
+                                if self.bond_len is None:
+                                        bond_len = max(cov_radii)+self.surface_add_radii
+                                else:
+                                        bond_len = self.bond_len
+                                temp_com = []
+                                cov_radii = []
+                                
+                                for i,coord in enumerate(coords):
+                                        if np.linalg.norm(site - coord) < bond_len:
+                                                temp_com.append(i)
+                                                j = i%len(surface_atoms)
+                                                cov_radii.append(covalent_radii[surface_atoms[j].number])
+                                if len(temp_com) == 4:
+                                        site_type = '4fold'
+                                        index_tuple = tuple(temp_com)
+                                        if index_tuple in fold4_group:
+                                                continue
+                                        else:
+                                                site = calculate_centroid(coords[temp_com],cov_radii,math.sqrt(com[1]))
+                                                fold4_group.append(index_tuple)
+                                                max_d = -1
+                                                for ind in temp_com[1:]:
+                                                        if np.linalg.norm(coords[temp_com[0]]-coords[ind]) > max_d:
+                                                                max_d = np.linalg.norm(coords[temp_com[0]]-coords[ind])
+                                                                temp_i = ind
+                                                del_bri_couple.append((temp_com[0],temp_i))
+                                                remain = []
+                                                for i in temp_com:
+                                                        if i != temp_com[0] and i != temp_i:
+                                                                remain.append(i)
+                                                del_bri_couple.append(tuple(remain))                      
+                                elif len(temp_com)==3:
+                                        site_type = 'hollow'
+                                        tri_groups.append(temp_com)
+                                else:
+                                        continue
                                 if not self.point_in_range(site):
                                         continue
-                                site_type = 'hollow' 
                                 if self.bond_len is None:
                                         bond_len = min(cov_radii)+self.surface_add_radii
                                 else:
@@ -662,10 +746,7 @@ class SlabAdsorptionsSitesFinder():
                                         height = math.sqrt((bond_len*self.k)** 2-(com[1]))
                                 except Exception as r:
                                         height = 0.1
-                                site , normal = self.extend_point_away(site,coords[com[0]],center,height)
-                                for c in com[0]:
-                                        i = c%len(surface_atoms)
-                                        atom_index[i].append(normal)
+                                site , normal = self.extend_point_away(site,coords[temp_com],center,height)
                                 flag = True
                                 for ap in coords:
                                         if np.linalg.norm(ap - site)+0.01 < bond_len*self.mul:
@@ -677,19 +758,37 @@ class SlabAdsorptionsSitesFinder():
                                                 'type':'surface',
                                                 'normal':normal,
                                                 'position':site,
+                                                'indices':[c%n for c in temp_com]
                                         })
                                         self.surf_index.append(sorted([surface_index[c%n] for c in com[0]]))
                         if len(com[0])==2:
+                                
                                 temp = coords[com[0]]
+                                if tuple(sorted(com[0])) in del_bri_couple:
+                                        continue
+                                lam = self.k
+                                for couple in tri_groups:
+                                        if com[0][0] in couple and com[0][1] in couple:
+                                                lam = 1.0
+                                                break             
                                 cov_radii = [covalent_radii[surface_atoms[c%n].number] for c in com[0]] 
                                 t = cov_radii[1]/sum(cov_radii)
                                 site = t * temp[0] + (1 - t) * temp[1]
                                 if not self.point_in_range(site):
                                         continue
-                                normals = []
-                                for c in com[0]:
-                                        normals.extend(atom_index[c%len(surface_atoms)])
-                                normal = np.mean(normals,axis=0) 
+                                
+                                neigh_coords = []
+                                for coord in coords:
+                                        if np.linalg.norm(site - coord) < sum(cov_radii)*lam:
+                                                neigh_coords.append(coord)
+                                xyz = np.array(neigh_coords)
+                                normal = plane_normal(xyz)
+                                center = self.atoms.get_center_of_mass()
+                                if site[2] < center[2]:
+                                        up = -1
+                                else:
+                                        up = 1
+                                normal *= up  
                                 if self.bond_len is None:
                                         bond_len = min(cov_radii)+self.surface_add_radii
                                 else:
@@ -710,6 +809,7 @@ class SlabAdsorptionsSitesFinder():
                                                 'type':'surface',
                                                 'normal':normal,
                                                 'position':site,
+                                                'indices':[c%n for c in com[0]]
                                         })
                                         self.surf_index.append(sorted([surface_index[c%n] for c in com[0]]))
                         if len(com[0])==1:
@@ -718,8 +818,19 @@ class SlabAdsorptionsSitesFinder():
                                 if not self.point_in_range(site):
                                         continue
                                 metal = surface_atoms[com[0][0]%n].symbol
-                                normals = atom_index[com[0][0]%len(surface_atoms)]
-                                normal = np.mean(normals,axis = 0)
+                                neigh_coords = []
+                                for i,coord in enumerate(coords):
+                                        neigh_len =covalent_radii[surface_atoms[com[0][0]%n].number] +covalent_radii[surface_atoms[i%n].number]
+                                        if np.linalg.norm(site - coord) < neigh_len:
+                                                neigh_coords.append(coord)
+                                xyz = np.array(neigh_coords)
+                                normal = plane_normal(xyz)
+                                center = self.atoms.get_center_of_mass()
+                                if site[2] < center[2]:
+                                        up = -1
+                                else:
+                                        up = 1
+                                normal *= up  
                                 if self.bond_len is None:
                                         bond_len = min([covalent_radii[atomic_numbers.get(metal,None)]])+self.surface_add_radii
                                 else:
@@ -738,6 +849,7 @@ class SlabAdsorptionsSitesFinder():
                                                 'type':'surface',
                                                 'normal':normal,
                                                 'position':site,
+                                                'indices':[c%n for c in com[0]]
                                         })
                 if self.tol == False:
                         self.surf_site_list = sites
