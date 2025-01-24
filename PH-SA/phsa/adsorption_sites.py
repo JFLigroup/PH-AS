@@ -680,8 +680,7 @@ class SlabAdsorptionsSitesFinder():
                         coords = surface_atoms.get_positions()
                 else:
                         coords = self.expand_surface_cells(surface_atoms.get_positions(),self.cell)
-                surface_atoms.cell = self.cell 
-                surface_atoms.write('../surface_atoms.vasp')
+
                 rc = gudhi.AlphaComplex(points=coords)
                 st = rc.create_simplex_tree((self.radii/2)**2)     
                 combinations = st.get_skeleton(4)
@@ -708,7 +707,7 @@ class SlabAdsorptionsSitesFinder():
                                 cov_radii = []
                                 
                                 for i,coord in enumerate(coords):
-                                        if np.linalg.norm(site - coord) < bond_len:
+                                        if np.linalg.norm(site - coord) < bond_len*self.k+0.2:
                                                 temp_com.append(i)
                                                 j = i%len(surface_atoms)
                                                 cov_radii.append(covalent_radii[surface_atoms[j].number])
@@ -766,7 +765,7 @@ class SlabAdsorptionsSitesFinder():
                                 temp = coords[com[0]]
                                 if tuple(sorted(com[0])) in del_bri_couple:
                                         continue
-                                lam = self.k
+                                lam = 2.0
                                 for couple in tri_groups:
                                         if com[0][0] in couple and com[0][1] in couple:
                                                 lam = 1.0
@@ -884,4 +883,4 @@ class SlabAdsorptionsSitesFinder():
                 if not self.inside_site_list:
                         self.get_inside_sites(absorbent=absorbent)
                 self.sites = self.surf_site_list + self.inside_site_list
-                return self.sites
+                return self.sitesa
