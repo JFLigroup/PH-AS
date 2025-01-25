@@ -123,4 +123,5 @@ A simple structure is provided for running the workflow and verifying installati
 ### Typical Demonstration Runtime
 
 - On a standard desktop computer, running the demonstration typically takes ~2-5 minutes.
+### DOI
 [![DOI](https://zenodo.org/badge/856829594.svg)](https://doi.org/10.5281/zenodo.14739245)
