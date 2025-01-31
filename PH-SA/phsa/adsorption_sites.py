@@ -173,7 +173,7 @@ class ClusterAdsorptionSitesFinder():
                                 cov_radii = []
                                 
                                 for i,coord in enumerate(surf_pos):
-                                        if np.linalg.norm(site - coord) <= bond_len:
+                                        if np.linalg.norm(site - coord) <= bond_len + 0.1:
                                                 temp_com.append(i) 
                                                 cov_radii.append(covalent_radii[surface_atoms[i].number])
                                 if len(temp_com) == 4:
@@ -820,7 +820,7 @@ class SlabAdsorptionsSitesFinder():
                                 neigh_coords = []
                                 for i,coord in enumerate(coords):
                                         neigh_len =covalent_radii[surface_atoms[com[0][0]%n].number] +covalent_radii[surface_atoms[i%n].number]
-                                        if np.linalg.norm(site - coord) < neigh_len:
+                                        if np.linalg.norm(site - coord) < neigh_len + 0.1:
                                                 neigh_coords.append(coord)
                                 xyz = np.array(neigh_coords)
                                 normal = plane_normal(xyz)
